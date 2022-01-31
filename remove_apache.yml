@@ -1,0 +1,20 @@
+--- # generallement on commence toujours par ces 3 tirets
+- hosts: all    # liste des hosts.Correspond au PLAY
+  become: true  # Activation de SUDO(plus besoin de --become).Tableau associatif dont l'équivalent en python est un dictionnaire {'become:'true'} ou avec un entier {'jambes':2}
+  tasks:        # declaration d'une LISTE de tâches
+  - name: update index repo # nom d'un TASK
+    apt:
+      update_cache: yes # équivalent à apt update
+  - name: désinstallation apache2
+    apt:
+      name: apache2
+      state: absent # on veut que le paquet apache2 soit desinstallé
+  - name: désinstallation php pour apache2
+    apt:
+      name: libapache2-mod-php
+      state: absent # on veut que le paquet php soit desinstallé
+
+
+
+
+
