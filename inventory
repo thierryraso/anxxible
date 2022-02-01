@@ -1,8 +1,12 @@
-# ubuntu-srv1
-192.168.0.38
-# ubuntu-srv2 
-192.168.0.39
-# ubuntu-srv3 
-192.168.0.40
-# rhel8-srv1
-192.168.0.29
+# [] correspond à un groupe de hosts
+[web_servers]
+192.168.0.38  # ubuntu-srv1
+192.168.0.29 # rhel8-srv1
+
+[db_servers]
+192.168.0.39  # ubuntu-srv2 
+
+[file_servers]
+192.168.0.40  # ubuntu-srv3 
+192.168.0.29 # rhel8-srv1
+

@@ -1,0 +1,24 @@
+--- # generallement on commence toujours par ces 3 tirets
+- hosts: all    # liste des hosts.Correspond au PLAY
+  become: true  # Activation de SUDO.Tableau associatif dont l'équivalent en python est un dictionnaire {'become:'true'} ou avec un entier {'jambes':2}
+  tasks:        # declaration d'une LISTE de tâches
+  
+  - name: update index du repo UBUNTU et RHEL puis installation apache2 et PHP sur les 2 distributions # nom d'un TASK
+    package:                        # le module package est un module génerique de gestion de paquet qui peut se substituer à APT et DNF
+      update_cache: yes         # équivalent à apt update et dnf update
+      name:  # on met tous les packages à installer dans une LISTE qui est un sous ensemble de name:
+             # Ici on déclare une LISTE de TEMPLATES qui font réference à des VARIABLES déclarées quelque part (exemple dans le fichier inventory).La syntaxe est "{{variable}}"
+        - "{{ apache2_package }}" # Installation du paquet apache2 sur UBUNTU et RHEL à la fois.
+        - "{{ php_package }}"   # Installation du paquet PHP sur UBUNTU et RHEL à la fois.On fait réference à des VARIABLES
+      state: latest # on s'assurre d'avoir la dernière version.Cette clé valeur s'aligne avec la clé name:
+    # when: ansible_distribution == "Ubuntu" condition IF qui s'execute seulement si la distribution est UBUNTU
+    # when: ansible_distribution in ["Debian", "Ubuntu", "RedHat"] # On peut écrire cette syntaxe si on a les 2 distributions dans le parc à gérer car les 2 utilisent "apt"
+    # when: ansible_distribution == "RedHat" and ansible_distribution_version == "8.5" # condition IF qui s'execute seulement si la distribution est RedHat ET la version est 8.5
+
+
+ 
+
+
+
+
+
