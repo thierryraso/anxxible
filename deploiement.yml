@@ -1,71 +1,150 @@
---- # generallement on commence toujours par ces 3 tirets
+--- 
 
-- hosts: all    # liste des hosts.Correspond au PLAY.Ce PLAY va concernet toues les HOSTS (ici update et upgrade)
-  tags: always # TAG ajouté au niveau du PLAY "hosts:all".Ce TAG concerne toutes les taches du play PAR HERITAGE.Le mot spécial "always" s'executera toujours sauf si on skip volontairement
-  become: true  # Activation de SUDO.Tableau associatif dont l'équivalent en python est un dictionnaire {'become:'true'} ou avec un entier {'jambes':2}
-  pre_tasks:    # declaration d'une LISTE de tâches.Le "pre" signifie que les tâches définies ici vont toujours avoir lieu avant les autres, même les rôles.
+- name: UPDATE DES REPOS ET UPGRADE DE PAQUETS SUR TOUS LES SERVEURS 
+  hosts: all    
+  tags: always 
+  become: true  
+  pre_tasks:    
+    - name: update index REPO et update des packages installés (RED HAT)
+      dnf:
+        update_cache: yes
+        update_only: yes 
+        state: latest
+      when: ansible_facts['distribution'] == "RedHat" 
+    - name: update index REPO et update des packages installés (UBUNTU)
+      apt:
+        update_cache: yes
+        upgrade: full
+      when: ansible_distribution == "Ubuntu" 
 
-  - name: update index REPO et update des packages installés (RED HAT)
-    dnf:
-      update_cache: yes
-      update_only: yes #DOC-ANSIBLE=>update seulement les paquets installés mais n'installe pas de paquets.
-      state: latest
-    when: ansible_distribution == "RedHat"
-  
-  - name: update index REPO et update des packages installés (UBUNTU)
-    apt:
-      update_cache: yes
-      upgrade: full
-    when: ansible_distribution == "Ubuntu"
-
-# On déclare un PLAY qui concerne seulement le GROUPE "web_servers" de l'inventaire.Ici on installe apache et PHP pour les serveurs dans ce groupe
-
-- hosts: web_servers # on reprend le nom exact du groupe dans la valeur [] du fichier inventory
+- name: DEPLOIEMENT FICHIER CUSTOM FACT SUR SERVEUR RHEL8-SRV1 
+  hosts: rhel8-srv1 
   become: true
   tasks:
-  
-  - name: installation apache et PHP sur les serveurs web UBUNTU
-    apt:               # on utilise le module apt
-      name:                      
-        - apache2 
-        - libapache2-mod-php
-      state: latest
-    when: ansible_distribution in ["Debian", "Ubuntu"] # On peut écrire cette syntaxe si on a les 2 distributions dans le parc à gérer car les 2 utilisent "apt"
+    - name: CREATION DU DOSSIER {{ path }} 
+      file:              
+        state: directory 
+        recurse: yes     
+        path: "{{ path }}"  
+    - name: COPIE DU FICHIER CUSTOM FACT DANS LE DOSSIER facts.d
+      copy:
+        src: redhat_custom.fact
+        dest: /etc/ansible/facts.d
+
+
+
+- name: DEPLOIEMENT SERVEURS WEB   
+  hosts: web_servers 
+  become: true
+  vars:              
+    - apache: apache2
+    - php: libapache2-mod-php
+  tasks:
+    - name: INSTALLATION {{ apache }} ET {{ php }} SUR LES SERVEURS WEB UBUNTU
+      apt:               
+        name:                      
+          - "{{ apache }}"
+          - "{{ php }}"
+        state: latest
+      when: ansible_distribution in ["Debian", "Ubuntu"] 
+    - name: INSTALLATION APACHE(httpd) VIA CUSTOM FACTS ET INSTALLATION NORMALE PHP SUR LES SERVEURS WEB RED HAT
+      dnf:                
+        name: 
+          - "{{ ansible_facts['ansible_local']['redhat_custom']['software']['package'] }}" 
+          - php 
+        state: latest 
+      when: ansible_distribution == "RedHat" and ansible_distribution_version == "8.5" 
+    - name: DEMARRER LE SERVICE HTTPD ET ACTIVER AU DEMARRAGE
+      service:  
+        name: "{{ ansible_facts['ansible_local']['redhat_custom']['software']['service'] }}" 
+        state: "{{ ansible_facts['ansible_local']['redhat_custom']['software']['state'] }}" 
+        enabled: "{{ ansible_facts['ansible_local']['redhat_custom']['software']['enabled'] }}"
+      when: ansible_facts['distribution']== "RedHat"  
+    - name: Autorisation des ports 80 et 443 sur FIREWALLD 
+      ansible.posix.firewalld:
+        port: "{{ item }}"  
+        permanent: yes
+        state: enabled
+        immediate: yes
+      loop:        
+        - 80/tcp   
+        - 443/tcp
+      when: ansible_distribution == "RedHat"
+    - name: COPIE DU FICHIER HTML VERS TOUS LES SERVEURS WEB
+      copy:           
+        src: default_site.html
+        dest: /var/www/html/index.html 
+        owner: root
+        group: root
+        mode: 0644 
+      tags: copy
+    - name: MODIFICATION DU MAIL DU SERVERADMIN DANS "httpd.conf" 
+      lineinfile:   
+        path: /etc/httpd/conf/httpd.conf 
+        regexp: '^ServerAdmin'    
+        line: ServerAdmin toto@mail.fr' 
+      when: ansible_distribution == "RedHat"
+      register: fichierhttpd 
+    - name: AFFICHER L'ETAT DE LA VARIABLE "changed" GRACE A LA VARIABLE fichierhttpd
+      debug:    
+        msg: affichage de la valeur de la variable fichierhttpd = {{ fichierhttpd.changed }} 
+    - name: REDEMARRAGE DU SERVICE HTTPD SI LE FICHIER httpd.conf A ETE MODIFIE
+      service:   
+        name: httpd
+        state: reloaded
+      when: fichierhttpd.changed 
     
-  - name: installation apache et PHP sur les serveurs web REDHAT
-    dnf:                # on utilise le module DNF
-      name: 
-        - httpd # nom du paquet apache2 sous RHEL
-        - php # nom du paquet PHP pour RHEL
-      state: latest 
-    when: ansible_distribution == "RedHat" and ansible_distribution_version == "8.5" # condition IF qui s'execute seulement si la distribution est RedHat ET la version est 8.5
-  
-- hosts: db_servers
+- name: DEPLOIEMENT SERVEUR BASE DE DONNEES    
+  hosts: db_servers
+  become: true
+  tasks: 
+    - name: Installation de {{ db_package }} sur UBUNTU
+      apt:
+        name: "{{ db_package }}" 
+        state: present
+    - name: Affichage d'un message concernant le service
+      debug:
+        msg: Le service {{ db_service }}.service démarrera automatiquement 
+
+
+- name: DEPLOIEMENT DU SERVEUR DE FICHIERS    
+  hosts: file_servers
   become: true
   tasks:
+    - name: INSTALLATION DU PAQUET "{{ samba_package }}" SUR rhel8-srv2
+      package:  
+        name: "{{ samba_package }}"
+        state: present
+    - name: INSTALLATION DU PAQUET "{{ nfs_package }}" sur rhel8-srv2
+      dnf:
+        name: "{{ nfs_package }}"
+        state: present
+  tags: files      
 
-  - name: Installation de mariadb (REDHAT)
-    dnf:
-      name: mariadb
-      state: latest
-    when: ansible_distribution == 'RedHat'
-    tags: ['redhat',db]
-  
-  - name: Installation de mariadb sur UBUNTU
-    apt:
-      name: mariadb-server
-      state: latest
-    when: ansible_distribution == 'Ubuntu'
-
-- hosts: file_servers
+- name: DEPLOIEMENT DE TERRAFORM SUR UN SERVEUR UBUNTU
+  hosts: management
   become: true
   tasks:
+    - name: installation de terraform sur le serveur ubuntu-srv3
+      unarchive:    
+        src: https://releases.hashicorp.com/terraform/1.1.4/terraform_1.1.4_linux_amd64.zip
+        dest: /usr/local/bin 
+        remote_src: yes
+        owner: root
+        group: root
+        mode: 0755
 
-  - name: Installation du paquet SAMBA
-    package:  # on utilise le module package car le paquet SAMBA server + client porte le même nom sur UBUNTU et REDHAT.
-      name: samba
-      state: present
-    tags: samba # TAGS individuel qui ne concerne que cette TASK
+
+
+
+
+
+
+
+
+
+      
+
   
 
 
